@@ -1,0 +1,7 @@
+[profile.release]
+
+[workspace]
+
+members = [
+    "qr-lib",
+]
