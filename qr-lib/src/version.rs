@@ -36,7 +36,7 @@ impl From<QrVersion> for u8 {
 }
 
 impl QrVersion {
-    pub fn to_u8(self) -> u8 {
+    pub const fn to_u8(self) -> u8 {
         self.0
     }
 

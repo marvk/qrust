@@ -2,10 +2,15 @@ use bitvec::macros::internal::funty::Fundamental;
 use bitvec::prelude::*;
 use image::{ImageBuffer, Rgb, RgbImage};
 
-pub use version::QrVersion;
 
 mod alignment;
 mod version;
+mod segment;
+mod error_correction;
+
+pub use version::QrVersion;
+pub use segment::QrSegment;
+
 
 struct QrRaw {
     pub version: QrVersion,
@@ -49,20 +54,20 @@ impl QrRaw {
             return;
         }
         let n = n.saturating_sub(1);
-        self.draw_horizontal_line(x, x + n, y, value);
-        self.draw_horizontal_line(x, x + n, y + n, value);
-        self.draw_vertical_line(x, y + 1, (y + n).saturating_sub(1), value);
-        self.draw_vertical_line(x + n, y + 1, (y + n).saturating_sub(1), value);
+        self.draw_horizontal_line(x, y, n, value);
+        self.draw_horizontal_line(x, y + n, n, value);
+        self.draw_vertical_line(x, y + 1, n.saturating_sub(2), value);
+        self.draw_vertical_line(x + n, y + 1, n.saturating_sub(2), value);
     }
 
-    fn draw_horizontal_line(&mut self, x1: usize, x2: usize, y: usize, value: bool) {
-        for x in x1..=x2 {
+    fn draw_horizontal_line(&mut self, x: usize, y: usize, length: usize, value: bool) {
+        for x in x..=(x + length) {
             self.set(x, y, value);
         }
     }
 
-    fn draw_vertical_line(&mut self, x: usize, y1: usize, y2: usize, value: bool) {
-        for y in y1..=y2 {
+    fn draw_vertical_line(&mut self, x: usize, y: usize, length: usize, value: bool) {
+        for y in y..=(y + length) {
             self.set(x, y, value);
         }
     }
@@ -89,15 +94,16 @@ fn qr_mask(version: QrVersion) -> (QrRaw, QrRaw) {
     let mut function_patterns = QrRaw::new(version);
     let mut mask = QrRaw::new(version);
 
-    for (x, y) in [(0, FINDER_PATTER_SIZE + 1), (side_length - FINDER_PATTER_SIZE - 2, FINDER_PATTER_SIZE + 1)] {
-        function_patterns.draw_horizontal_line(x, x + FINDER_PATTER_SIZE + 1, y, false);
-        mask.draw_horizontal_line(x, x + FINDER_PATTER_SIZE + 1, y, true);
+    for (x, y) in [(0, FINDER_PATTER_SIZE + 1), (side_length - FINDER_PATTER_SIZE - 1, FINDER_PATTER_SIZE + 1)] {
+        function_patterns.draw_horizontal_line(x, y, FINDER_PATTER_SIZE, false);
+        mask.draw_horizontal_line(x, y, FINDER_PATTER_SIZE, true);
     }
 
-    for (x, y) in [(FINDER_PATTER_SIZE + 1, 0), (FINDER_PATTER_SIZE + 1, side_length - FINDER_PATTER_SIZE - 1)] {
-        function_patterns.draw_horizontal_line(x, x + FINDER_PATTER_SIZE + 1, y, true);
-        mask.draw_vertical_line(x, y, y + FINDER_PATTER_SIZE, true);
-    }
+    mask.draw_vertical_line(FINDER_PATTER_SIZE + 1, 0, FINDER_PATTER_SIZE + 1, true);
+    mask.draw_vertical_line(FINDER_PATTER_SIZE + 1, side_length - FINDER_PATTER_SIZE, FINDER_PATTER_SIZE - 1, true);
+
+    function_patterns.set(FINDER_PATTER_SIZE + 1, side_length - FINDER_PATTER_SIZE - 1, true);
+    mask.set(FINDER_PATTER_SIZE + 1, side_length - FINDER_PATTER_SIZE - 1, true);
 
     for c in 0..side_length {
         let value = c % 2 == 0;
@@ -122,11 +128,11 @@ fn qr_mask(version: QrVersion) -> (QrRaw, QrRaw) {
     }
 
     for (x, y) in [(0, FINDER_PATTER_SIZE), (0, side_length - FINDER_PATTER_SIZE - 1), (side_length - FINDER_PATTER_SIZE - 1, FINDER_PATTER_SIZE)] {
-        mask.draw_horizontal_line(x, x + FINDER_PATTER_SIZE, y, true);
+        mask.draw_horizontal_line(x, y, FINDER_PATTER_SIZE, true);
     }
 
     for (x, y) in [(FINDER_PATTER_SIZE, 0), (side_length - FINDER_PATTER_SIZE - 1, 0), (FINDER_PATTER_SIZE, side_length - FINDER_PATTER_SIZE)] {
-        mask.draw_vertical_line(x, y, y + FINDER_PATTER_SIZE - 1, true);
+        mask.draw_vertical_line(x, y, FINDER_PATTER_SIZE - 1, true);
     }
 
     for &y in alignment::alignment_coords(version) {
@@ -140,6 +146,13 @@ fn qr_mask(version: QrVersion) -> (QrRaw, QrRaw) {
                 mask.draw_square(x - 1, y - 1, 3, true);
                 mask.draw_square(x - 2, y - 2, 5, true);
             }
+        }
+    }
+
+    if version >= QrVersion::V7 {
+        for i in 0..3 {
+            mask.draw_horizontal_line(0, side_length - FINDER_PATTER_SIZE - 4 + i, 6, true);
+            mask.draw_vertical_line(side_length - FINDER_PATTER_SIZE - 4 + i, 0, 6, true);
         }
     }
 
@@ -169,6 +182,15 @@ mod tests {
 
     #[test]
     fn it_works() {
-        img();
+        QrSegment::encode_alphanumeric(QrVersion::V4, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:").unwrap();
+
+        let x = [b' ', b'$', b'%', b'*', b'+', b'-', b'.', b'/', b':'];
+
+        for x in x {
+            println!("{}: {}", x.as_char().unwrap(), x);
+        }
+
+
+        // img();
     }
 }
